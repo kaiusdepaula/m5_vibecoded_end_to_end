@@ -1,0 +1,23 @@
+horizon: 28
+random_seed: 42
+
+# The full M5 extract is ~30,490 item-store series; that scale repeatedly
+# exhausted available memory during this POC's timebox (see README). Training
+# on a random subsample is a deliberate, documented scope reduction, not a
+# silent one. Set to null to use the full extract.
+sample_series: 3000
+
+backtest:
+  window_count: 3
+  step_days: 28
+
+hierarchy_weight_lookback_days: 28
+reconciliation_tolerance: 1.0e-6
+reproducibility_tolerance: 1.0e-4
+
+registered_model_name: m5_hierarchical
+model_alias: champion
+
+features:
+  lags: [7, 14, 28]
+  rolling_means: [7, 28]

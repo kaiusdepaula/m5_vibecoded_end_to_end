@@ -1,0 +1,68 @@
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////data/mlflow.db
+      - --default-artifact-root=/data/artifacts
+      - --allowed-hosts=localhost:*,127.0.0.1:*,mlflow:*
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      # train crashed with SIGSEGV (exit 139) inside a plain pandas merge, before
+      # LightGBM ever ran -- lightgbm/mlforecast are imported at module load
+      # time regardless, pulling in a native OpenMP runtime that can conflict
+      # with numpy/pandas' own internal threading in a container. Forcing
+      # everything single-threaded is the standard fix for this crash class.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      GIT_PYTHON_REFRESH: quiet
+      PYTHONFAULTHANDLER: "1"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      # /data/artifacts is a local filesystem path on the mlflow server, not a
+      # proxied mlflow-artifacts:/ URI -- clients logging/loading artifacts
+      # need that same path to actually be the same files, not a throwaway
+      # directory created fresh inside their own container.
+      - mlflow_data:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      train:
+        condition: service_completed_successfully
+    volumes:
+      - mlflow_data:/data
+
+volumes:
+  mlflow_data:
